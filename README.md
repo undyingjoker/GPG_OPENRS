@@ -36,17 +36,17 @@ cd GPG
 Follow the repositories you need and install the required packages.
 
 ## Experiments on VisualThinker-R1-Zero
-Please refer to the training script: `./VisualThinker-R1-Zero/src/open-r1-multimodal/run_grpo_SAT.sh`
+Please refer to the training script: [`./VisualThinker-R1-Zero/src/open-r1-multimodal/run_grpo_SAT.sh`](./VisualThinker-R1-Zero/src/open-r1-multimodal/run_grpo_SAT.sh)
 
 
 ## Experiments on Visual-RFT
 
-Please refer to the training script: `./Visual-RFT/src/scripts`
+Please refer to the training script: [`./Visual-RFT/src/scripts/`](./Visual-RFT/src/scripts/)
 
 
 ## Experiments on R1-V
 
-Please refer to the training script: `./R1-V/src/scripts/run_grpo_GEOQA_qwen2.5_3b.sh`
+Please refer to the training script: [`./R1-V/src/scripts/run_grpo_GEOQA_qwen2.5_3b.sh`](./R1-V/src/scripts/run_grpo_GEOQA_qwen2.5_3b.sh)
 
 
 ## Q&A
