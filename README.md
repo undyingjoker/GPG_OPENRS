@@ -35,7 +35,13 @@ cd GPG
 ```
 Follow the repositories you need and install the required packages.
 
+## Experiments on open-rs
+
+Please refer to the training script: [`./open-rs/train.sh`](./open-rs/train.sh), [`./open-rs/recipes`](./open-rs/recipes)
+
+
 ## Experiments on VisualThinker-R1-Zero
+
 Please refer to the training script: [`./VisualThinker-R1-Zero/src/open-r1-multimodal/run_grpo_SAT.sh`](./VisualThinker-R1-Zero/src/open-r1-multimodal/run_grpo_SAT.sh)
 
 
