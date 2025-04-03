@@ -1,0 +1,10 @@
+output/
+hostfiles/
+internal_scripts/
+data/
+output_onlypg/
+output_grpo/
+Geo170K/
+src/eval/Geo170K/
+src/eval/images/
+src/eval/images.zip
