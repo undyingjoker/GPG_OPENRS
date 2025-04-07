@@ -54,9 +54,9 @@ class GRPOScriptArguments(ScriptArguments):
         metadata={"help": "Minimum number of pixels for the image"},
     )
     pg_name: Optional[str] = field(
-        #可选 grpo gpg pinsker
+        #可选 grpo gpg
         default="grpo",
-        metadata={"help": "Only train the specified part of the model (grpo, gpg, pinsker)"},
+        metadata={"help": "Only train the specified part of the model (grpo, gpg)"},
     )
 
 import numpy as np
@@ -172,7 +172,7 @@ SYSTEM_PROMPT = (
 
 def main(script_args, training_args, model_args):
     training_args.pg_name = script_args.pg_name
-    assert training_args.pg_name in ["grpo", "gpg", "pinsker"], f"pg_name {training_args.pg_name} is not supported"
+    assert training_args.pg_name in ["grpo", "gpg"], f"pg_name {training_args.pg_name} is not supported"
     # Get reward functions
     reward_funcs = [reward_funcs_registry[func] for func in script_args.reward_funcs]
 

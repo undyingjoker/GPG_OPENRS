@@ -439,7 +439,7 @@ class Qwen2VLGRPOTrainer(Trainer):
         # Get rid of the prompt (-1 because of the shift done in get_per_token_logps)
         per_token_logps = per_token_logps[:, prompt_length - 1 :]
 
-        if self.args.pg_name in ['grpo', 'pinsker']:
+        if self.args.pg_name in ['grpo']:
             with torch.inference_mode():
                 if self.ref_model is not None:
                     ref_per_token_logps = self._get_per_token_logps(self.ref_model, prompt_completion_ids, attention_mask, pixel_values, image_grid_thw)
@@ -512,28 +512,6 @@ class Qwen2VLGRPOTrainer(Trainer):
             per_token_loss = -(per_token_loss - self.beta * per_token_kl)
             loss = ((per_token_loss * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)).mean()
 
-        elif self.args.pg_name == 'pinsker':
-            # ref_per_token_logps shape: (B*G, C), per_token_logps shape: (B*G, C) -> B=1
-            # Caluate Pinsker V(p, q), No sum over the tokens
-            per_token_pinsker = torch.abs(ref_per_token_logps - per_token_logps)
-            # mask the completion
-            per_token_pinsker = per_token_pinsker * completion_mask
-            # Cal ((V(p, q))^2)/2.0, sum over the tokens. shape: (B*G,) -> B=1
-            pinsker_loss = (per_token_pinsker.sum(dim=1) ** 2.0) / 2.0 / completion_mask.sum(dim=1)
-            # cal the mean reward loss. shape: (B,) -> B=1
-            pinsker_loss = pinsker_loss.mean()
-
-            # cal the per token reward loss
-            per_token_loss = torch.exp(per_token_logps - per_token_logps.detach()) * advantages.unsqueeze(1)
-            # mask the completion
-            reward_loss = per_token_loss * completion_mask
-            # cal the mean reward loss
-            reward_loss = reward_loss.sum(dim=1) / completion_mask.sum(dim=1)
-            # cal the mean reward loss. shape: (B,) -> B=1
-            reward_loss = reward_loss.mean()
-
-            loss = -(reward_loss - self.beta * pinsker_loss)
-
         elif self.args.pg_name == 'gpg':
             per_token_loss = - per_token_logps * advantages.unsqueeze(1)
             loss = ((per_token_loss * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)).mean()
@@ -559,8 +537,6 @@ class Qwen2VLGRPOTrainer(Trainer):
         if self.args.pg_name == 'grpo':
             mean_kl = ((per_token_kl * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)).mean()
             self._metrics["kl"].append(self.accelerator.gather_for_metrics(mean_kl).mean().item())
-        elif self.args.pg_name == 'pinsker':
-            self._metrics["pinsker"].append(self.accelerator.gather_for_metrics(pinsker_loss).mean().item())
         elif self.args.pg_name == 'gpg':
             # mean_kl = 0.0
             # self._metrics["kl"].append(mean_kl)
