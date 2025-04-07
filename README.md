@@ -100,7 +100,7 @@ Please refer to the training script: [`./Visual-RFT/src/scripts/`](./Visual-RFT/
 The results are as follows:
 
 > *Table: Reasoning grounding results on LISA. GPG surpasses GRPO in reasoning grounding with 239 training images.*
-> | Models                     | mIoU$_{test}$ | mIoU$_{val}$ | gIoU$_{test}$ |
+> | Models                     | mIoU<sub>test</sub>  | mIoU<sub>val</sub>  | gIoU<sub>test</sub>  |
 > |----------------------------|:--------------------:|:-------------------:|:--------------------:|
 > | Qwen2-VL-2B                | 26.9                 | 30.1                | 25.3                 |
 > | + SFT                      | 28.3                 | 29.7                | 25.3                 |
@@ -121,7 +121,7 @@ The results are as follows:
 Please refer to the training script: [`./R1-V/src/scripts/run_grpo_GEOQA_qwen2.5_3b.sh`](./R1-V/src/scripts/run_grpo_GEOQA_qwen2.5_3b.sh)
 
 > *Table: Geometry reasoning results on GEOQA. GPG is better than GRPO.*
-> | Models                     | GEOQA$_{Test}$        |
+> | Models                     | GEOQA<sub>Test</sub>  |
 > |----------------------------|:---------------------:|
 > | Qwen2.5-VL-3B-Instruct     | 35.41                 |
 > | + GRPO                     | 47.48                 |
