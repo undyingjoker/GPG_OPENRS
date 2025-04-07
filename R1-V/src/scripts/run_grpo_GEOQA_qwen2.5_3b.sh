@@ -1,7 +1,7 @@
 timestamp=$1
 echo "timestamp: ${timestamp}"
-# only_pg=true
-only_pg=false
+only_pg=true
+# only_pg=false
 
 DATA_PATH=leonardPKU/GEOQA_R1V_Train_8K
 CKPT_PATH=Qwen2.5-VL-3B-Instruct

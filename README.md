@@ -4,8 +4,8 @@
         <div class="is-size-5 publication-authors">
               <span class="author-block"> <a href="https://scholar.google.com/citations?user=jn21pUsAAAAJ" target="_blank">Xiangxiang Chu</a>, </span>
               <span class="author-block"> <a href="https://scholar.google.com/citations?user=X0o0Ib8AAAAJ" target="_blank">Hailang Huang</a>, </span>
-              <span class="author-block">Xiao Zhang, </span>
-              <span class="author-block">Fei Wei, </span>
+              <span class="author-block"><a href="https://github.com/undyingjoker" target="_blank">Xiao Zhang</a>, </span>
+              <span class="author-block"><a href="https://scholar.google.com/citations?user=xqrPe6gAAAAJ" target="_blank">Fei Wei</a>, </span>
               <span class="author-block"> <a href="https://www.semanticscholar.org/author/Yong-Wang/1683878" target="_blank">Yong Wang</a></span>
         </div>
         <div class="is-size-5 publication-authors">
@@ -26,6 +26,12 @@ Reinforcement Learning (RL) can directly enhance the reasoning capabilities of l
 </div>
 
 ------
+
+# Resources
+
+## 🤗 Models
+
+1. [GPG-Open-RS1](https://huggingface.co/GD-ML/Open-RS1): The RL model trained on the Open-r1 dataset based on GPG, using DeepSeek-R1-Distill-Qwen-1.5B as the baseline model.
 
 
 # Usage
