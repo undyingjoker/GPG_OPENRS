@@ -12,7 +12,7 @@
               <span class="author-block">AMAP, Alibaba Group</span>
         </div>
     </div>
-  📖<a href="https://arxiv.org/abs/2504.02546">Paper</a> | Work in progress.</h3>
+   📖<a href="https://arxiv.org/abs/2504.02546">Paper <img src="http://img.shields.io/badge/cs.LG-arXiv%3A2504.02546-B31B1B.svg?link=https%3A%2F%2Farxiv.org%2Fabs%2F2504.02546"></a> | Work in progress.
 </div>
 <div>
 Reinforcement Learning (RL) can directly enhance the reasoning capabilities of large language models without extensive reliance on Supervised Fine-Tuning (SFT). In this work, we revisit the traditional Policy Gradient (PG) mechanism and propose a minimalist RL approach termed Group Policy Gradient (GPG). Unlike conventional methods, GPG directly optimize the original RL objective, thus obviating the need for surrogate loss functions. As illustrated in the figure below, by eliminating both the critic and reference models, and avoiding KL divergence constraints, our approach significantly simplifies the training process when compared to Group Relative Policy Optimization (GRPO). Our approach achieves superior performance without relying on auxiliary techniques or adjustments. Extensive experiments demonstrate that our method not only reduces computational costs but also consistently outperforms GRPO across various unimodal and multimodal tasks. 
