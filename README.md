@@ -45,12 +45,7 @@ Follow the repositories you need and install the required packages.
 
 Please refer to the training script: [`./open-rs/train.sh`](./open-rs/train.sh), [`./open-rs/recipes`](./open-rs/recipes)
 
-
-## Experiments on VisualThinker-R1-Zero
-
-Please refer to the training script: [`./VisualThinker-R1-Zero/src/open-r1-multimodal/run_grpo_SAT.sh`](./VisualThinker-R1-Zero/src/open-r1-multimodal/run_grpo_SAT.sh)
-
-The Results are as follows:
+The results are as follows:
 
 > *Table: Results on the DeepSeek-R1istill-Qwen-1.5B model. GPG method achieved an additional average performance boost of 2.6% compared to GRPO.*
 > | Models                   | Average   | AIME24 | MATH-500  | AMC23      | Minerva | OlympiadBench |
@@ -60,7 +55,7 @@ The Results are as follows:
 > | + GPG                  | 55.7      | 33.3   | 87.6      | 77.5       | 29.4    | 50.5          |
 
 
-> *Table:  Results on Qwen2.5-Math-7B model. In comparison with GRPO, the GPG method demonstrated superior performance across four distinct datasets.*
+> *Table: Results on Qwen2.5-Math-7B model. In comparison with GRPO, the GPG method demonstrated superior performance across four distinct datasets.*
 > | Models | Average | AIME24 | MATH-500 | AMC23 | Minerva | OlympiadBench |
 > |--------------------|:-------:|:------:|:--------:|:-----:|:-------:|:-------------:|
 > | Qwen2.5-Math-7B    | 30.9    | 13.3   | 57.6     | 45.0  | 14.7    | 23.7          |
@@ -69,9 +64,9 @@ The Results are as follows:
 > | + GPG              | 45.3    | 23.3   | 73.6     | 60.0  | 30.5    | 39.3          |
 
 
-> *Table: Zero-shot pass@1 performance across benchmarks. Dashes (–) denote unavailable official scores. Asterisk (*) indicates reproduced results.*
+> *Table: Zero-shot pass@1 performance across benchmarks. Dashes (–) denote unavailable official scores. Asterisk (\*) indicates reproduced results.*
 > | Model                         | Average | AIME24 | MATH-500 | AMC23 | Minerva | OlympiadBench |
-> |:-----------------------------:|:-------:|:------:|:--------:|:-----:|:-------:|:-------------:|
+> |-------------------------------|:-------:|:------:|:--------:|:-----:|:-------:|:-------------:|
 > | Llama-3.1-70B-Instruct        | 35.7    | 16.7   | 64.6     | 30.1  | 35.3    | 31.9          |
 > | rStar-Math-7B                 | 26.7    | 78.4   | 47.5     | -     | 47.1    | -             |
 > | Eurus-2-7B-PRIME              | 26.7    | 79.2   | 57.8     | 38.6  | 42.1    | 48.9          |
@@ -83,14 +78,55 @@ The Results are as follows:
 > | GPG-RS3                       | 55.5    | 33.3   | 85.0     | 80.0  | 26.8    | 52.4          |
 
 
+## Experiments on VisualThinker-R1-Zero
+
+Please refer to the training script: [`./VisualThinker-R1-Zero/src/open-r1-multimodal/run_grpo_SAT.sh`](./VisualThinker-R1-Zero/src/open-r1-multimodal/run_grpo_SAT.sh)
+
+The results are as follows:
+
+> *Table: Visual reasoning results on CV-Bench, which shows GPG training on base model has overall better performance over GRPO training and the base model.*
+> | Models                     | Total      | Count      | Relation    | Depth       | Distance   |
+> |----------------------------|:----------:|:----------:|:-----------:|:-----------:|:----------:|
+> | Qwen2-VL-2B                | 31.38      | 54.69      | 22.46       | 0.16        | 31.66      |
+> | + SFT                      | 57.84      | 60.02      | 68.92       | 55.00       | 45.83      |
+> | + GRPO                     | 59.47      | 59.64      | 66.76       | 54.16       | 56.66      |
+> | + GPG                      | 69.11      | 65.36      | 82.62       | 67.83       | 60.67      |
+
+
 ## Experiments on Visual-RFT
 
 Please refer to the training script: [`./Visual-RFT/src/scripts/`](./Visual-RFT/src/scripts/)
 
+The results are as follows:
+
+> *Table: Reasoning grounding results on LISA. GPG surpasses GRPO in reasoning grounding with 239 training images.*
+> | Models                     | mIoU$_{test}$ | mIoU$_{val}$ | gIoU$_{test}$ |
+> |----------------------------|:--------------------:|:-------------------:|:--------------------:|
+> | Qwen2-VL-2B                | 26.9                 | 30.1                | 25.3                 |
+> | + SFT                      | 28.3                 | 29.7                | 25.3                 |
+> | + GRPO                     | 37.6                 | 34.4                | 34.4                 |
+> | + GPG                      | 51.5                 | 53.4                | 49.5                 |
+
+
+> *Table: 4-shot Results on Four Fine-grained Classification Datasets. GPG shows consistently better results than GRPO on $4$ classification datasets.*
+> | Models          | Average   | Flower102 | Pets37    | FGVC      | Cars196   |
+> |-----------------|:---------:|:---------:|:---------:|:---------:|:---------:|
+> | Qwen2-VL-2B     | 56.0      | 54.8      | 66.4      | 45.9      | 56.8      |
+> | + SFT           | 55.6      | 58.5      | 55.5      | 67.9      | 40.5      |
+> | + GRPO          | 81.9      | 71.4      | 86.1      | 74.8      | 95.3      |
+> | + GPG           | 86.0      | 73.0      | 87.1      | 86.8      | 97.1      |
 
 ## Experiments on R1-V
 
 Please refer to the training script: [`./R1-V/src/scripts/run_grpo_GEOQA_qwen2.5_3b.sh`](./R1-V/src/scripts/run_grpo_GEOQA_qwen2.5_3b.sh)
+
+> *Table: Geometry reasoning results on GEOQA. GPG is better than GRPO.*
+> | Models                     | GEOQA$_{Test}$        |
+> |----------------------------|:---------------------:|
+> | Qwen2.5-VL-3B-Instruct     | 35.41                 |
+> | + GRPO                     | 47.48                 |
+> | + GPG                      | 50.80                 |
+
 
 
 ## Q&A
