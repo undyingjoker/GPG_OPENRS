@@ -1,13 +1,13 @@
 # Model arguments
 # You need to download the model and manually change the rope to 300k and max_position_embeddings to 32768
 # the config file should match https://huggingface.co/open-r1/OpenR1-Qwen-7B/blob/main/config.json
-model_name_or_path: /mnt/workspace/common/models/Qwen2.5-1.5B-Instruct # /mnt/workspace/common/models/Qwen2.5-Math-7B-Instruct #Qwen/Qwen2.5-Math-7B-Instruct
+model_name_or_path: models/Qwen2.5-1.5B-Instruct #models/Qwen2.5-Math-7B-Instruct #Qwen/Qwen2.5-Math-7B-Instruct
 model_revision: main
 torch_dtype: bfloat16
 attn_implementation: flash_attention_2
 
 # Data training arguments
-dataset_name: /mnt/workspace/common/datas/OpenR1-Math-220k/ #open-r1/OpenR1-Math-220k
+dataset_name: datas/OpenR1-Math-220k/ #open-r1/OpenR1-Math-220k
 dataset_num_proc: 48
 
 #SFT hyperparam

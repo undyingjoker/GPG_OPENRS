@@ -3,8 +3,8 @@ import torch
 from open_r1.utils.data_utils import custom_loading_dataset
 
 # 加载预训练的分词器
-tokenizer = AutoTokenizer.from_pretrained("/mnt/workspace/common/models/Qwen2.5-Math-7B")
-dataset = custom_loading_dataset("/mnt/workspace/common/datas/SimpleRL-Zoo-Data/simplelr_qwen_level3to5", tokenizer=tokenizer)
+tokenizer = AutoTokenizer.from_pretrained("models/Qwen2.5-Math-7B")
+dataset = custom_loading_dataset("datas/SimpleRL-Zoo-Data/simplelr_qwen_level3to5", tokenizer=tokenizer)
 
 
 def make_conversation_math35(example):
