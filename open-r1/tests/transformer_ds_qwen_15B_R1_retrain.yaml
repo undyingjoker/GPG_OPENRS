@@ -1,6 +1,6 @@
 model:
   base_params:
-    model_args: "pretrained=/mnt/workspace/cxx/opensource/open-r1/data/Qwen2.5-1.5B-Open-R1-GPG" # in fact this GRPO from scratch.
+    model_args: "your_path/Qwen2.5-1.5B-Open-R1-GPG" # in fact this GRPO from scratch.
     dtype: "bfloat16"
     compile: false
   merged_weights: # Ignore this section if you are not using PEFT models
