@@ -59,6 +59,10 @@ class GRPOScriptArguments(ScriptArguments):
         default="grpo",
         metadata={"help": "Only train the specified part of the model (grpo, gpg)"},
     )
+    adjust_gd: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether to adjust the gradient of the model"},
+    )
 
 def extract_bbox(response):
     start_tag = "<answer>"
@@ -393,6 +397,7 @@ SYSTEM_PROMPT = (
 def main(script_args, training_args, model_args):
     training_args.pg_name = script_args.pg_name
     assert training_args.pg_name in ["grpo", "gpg"], f"pg_name {training_args.pg_name} is not supported"
+    training_args.adjust_gd = script_args.adjust_gd
     # Get reward functions
     script_args.reward_funcs = ['accuracy_iou','accuracy_confidence','format']
     reward_funcs = [reward_funcs_registry[func] for func in script_args.reward_funcs]

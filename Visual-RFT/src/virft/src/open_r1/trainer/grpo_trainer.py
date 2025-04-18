@@ -473,6 +473,26 @@ class Qwen2VLGRPOTrainer(Trainer):
         # Sum the rewards from all reward functions
         rewards = rewards_per_func.sum(dim=1)
 
+        with torch.inference_mode():
+            gathered_rewards_per_func = self.accelerator.gather(rewards_per_func)
+            gathered_rewards = gathered_rewards_per_func.sum(dim=1)
+
+            gathered_mean_grouped_rewards = gathered_rewards.view(-1, self.num_generations).mean(dim=1)
+            gathered_std_grouped_rewards = gathered_rewards.view(-1, self.num_generations).std(dim=1)
+
+            # 找出标准差为 0 的组
+            identical_value_mask = gathered_std_grouped_rewards == 0
+            easy_mask = gathered_mean_grouped_rewards == 1
+            hard_mask = gathered_mean_grouped_rewards == 0
+
+            # 计算标准差为 0 的组的数目
+            num_identical_reward_groups = identical_value_mask.sum().item()
+            num_easy_problem = easy_mask.sum().item()
+            num_hard_problem = hard_mask.sum().item()
+            num_reward_samples = gathered_rewards.numel() / self.num_generations
+
+            lr_ratio = num_identical_reward_groups / num_reward_samples
+
         # Compute grouped-wise rewards
         mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1)
         std_grouped_rewards = rewards.view(-1, self.num_generations).std(dim=1)
@@ -480,7 +500,12 @@ class Qwen2VLGRPOTrainer(Trainer):
         # Normalize the rewards to compute the advantages
         mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
         std_grouped_rewards = std_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
-        advantages = (rewards - mean_grouped_rewards) / (std_grouped_rewards + 1e-4)
+
+        # advantages = (rewards - mean_grouped_rewards) / (std_grouped_rewards + 1e-4)
+        if self.args.adjust_gd:
+            advantages = (rewards - mean_grouped_rewards)
+        else:
+            advantages = (rewards - mean_grouped_rewards) / (std_grouped_rewards + 1e-4)
 
         if self.args.pg_name == 'grpo':
             # Compute the KL divergence between the model and the reference model
@@ -512,13 +537,24 @@ class Qwen2VLGRPOTrainer(Trainer):
 
         self._metrics["reward_std"].append(self.accelerator.gather_for_metrics(std_grouped_rewards).mean().item())
 
+        self._metrics['num_identical_reward_groups'].append(num_identical_reward_groups)
+        self._metrics['num_reward_samples'].append(num_reward_samples)
+        self._metrics['lr_ratio'].append(lr_ratio)
+        self._metrics['num_easy_problem'].append(num_easy_problem)
+        self._metrics['num_hard_problem'].append(num_hard_problem)
+
         if self.args.pg_name == 'grpo':
             mean_kl = ((per_token_kl * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)).mean()
             self._metrics["kl"].append(self.accelerator.gather_for_metrics(mean_kl).mean().item())
         elif self.args.pg_name == 'gpg':
             # mean_kl = 0.0
             # self._metrics["kl"].append(mean_kl)
-            pass
+            per_token_kl = torch.exp(ref_per_token_logps - per_token_logps) - (ref_per_token_logps - per_token_logps) - 1
+            mean_kl = ((per_token_kl * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)).mean()
+            self._metrics["kl_gpg"].append(self.accelerator.gather_for_metrics(mean_kl).mean().item())
+        
+        if self.args.adjust_gd:
+            loss = loss / max((1.0 - lr_ratio), 0.05)
 
         return loss
 
