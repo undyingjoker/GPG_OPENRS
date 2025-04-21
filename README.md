@@ -63,6 +63,7 @@ The results are as follows:
 > | GPG-RS1                           | 55.7          | 33.3             | 87.6          | 77.5  | 29.4    | 50.5          |
 > | GPG-RS3                           | 55.5          | 33.3             | 85.0          | 80.0  | 26.8    | 52.4          |
 
+Please refer to the training script: [`./open-r1/train.sh`](./open-r1/train.sh)
 
 > Table: The zero-shot pass@1 performance of the 7B models across five mathematical reasoning benchmarks. $\dagger$: reproduced results using the released code. $\ddagger$: results from open-rs.
 > | 7B Models                                      | Average       | AIME24 | MATH-500 | AMC23         | Minerva | OlympiadBench |
