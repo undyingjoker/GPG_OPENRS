@@ -32,7 +32,7 @@ Reinforcement Learning (RL) can directly enhance the reasoning capabilities of l
 ## 🤗 Models
 
 1. [GPG-Open-RS1](https://huggingface.co/GD-ML/Open-RS1): The RL model trained on the Open-r1 dataset based on GPG, using DeepSeek-R1-Distill-Qwen-1.5B as the baseline model.
-
+2. [GPG-7B](https://huggingface.co/GD-ML/Qwen2.5-Math-7B-GPG): The RL model trained on the simplelr_qwen_level3to5 dataset based on GPG, using Qwen2.5-Math-7B as the baseline model.
 
 # Usage
 
