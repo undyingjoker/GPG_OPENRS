@@ -22,7 +22,7 @@ Reinforcement Learning (RL) can directly enhance the reasoning capabilities of l
 
 <div align="center">
 <h3>Comparison of various RL methods</h2>
-<img src="docs/images/GPG.png?_t=202504301741" alt="GPG-method" width="100%">
+<img src="docs/images/GPG.png?_t=202504181057" alt="GPG-method" width="100%">
 </div>
 
 ------
