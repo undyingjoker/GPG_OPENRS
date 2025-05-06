@@ -31,7 +31,7 @@ from open_r1.utils.wandb_logging import init_wandb_training
 from trl import GRPOTrainer, ModelConfig, TrlParser, get_peft_config
 from open_r1.gpg_trainer import GPGTrainer
 from open_r1.utils.data_utils import custom_loading_dataset
-
+from transformers import TrainerCallback
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +153,20 @@ def main(script_args, training_args, model_args):
         callbacks=get_callbacks(training_args, model_args),
         processing_class=tokenizer,
     )
+
+    class ResetDataLoader(TrainerCallback):
+        trainer = None
+
+        def on_epoch_end(self, args, state, control, **kwargs):
+            """
+            Event called at the end of an epoch.
+            """
+            if hasattr(self.trainer, '_epoch_iterator'):
+                print('reset epoch iter in trainer')
+                del self.trainer._epoch_iterator
+
+    ResetDataLoader.trainer = trainer
+    trainer.add_callback(ResetDataLoader)
 
     ###############
     # Training loop

@@ -65,6 +65,7 @@ class GPGConfig(GRPOConfig):
         default="uniform",
         metadata={"help": ("hard, uniform.")},
     )
+    min_inverse_alpha: float = field(default=0.5, metadata={"help": "minimum inverse alpha"})
 
 
 
