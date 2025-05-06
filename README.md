@@ -58,24 +58,25 @@ The results are as follows:
 > |-----------------------------------|:-------------:|:----------------:|:-------------:|:-----:|:-------:|:-------------:|
 > | DeepSeek-R1-Distill-Qwen-1.5B     | 48.9          | 28.8             | 82.8          | 62.9  | 26.5    | 43.3          |
 > | Still-3-1.5B-Preview              | 51.6          | 32.5             | 84.4          | 66.7  | 29.0    | 45.4          |
-> | Open-RS1 $^\dagger$                | 53.1          | 33.3             | 83.8          | 67.5  | 29.8    | 50.9          |
-> | Open-RS3 $^\dagger$                | 52.0          | 26.7             | 85.4          | 70.0  | 27.9    | 50.2          |
+> | Open-RS1 $^\dagger$               | 53.1          | 33.3             | 83.8          | 67.5  | 29.8    | 50.9          |
+> | Open-RS3 $^\dagger$               | 52.0          | 26.7             | 85.4          | 70.0  | 27.9    | 50.2          |
 > | GPG-RS1                           | 55.7          | 33.3             | 87.6          | 77.5  | 29.4    | 50.5          |
 > | GPG-RS3                           | 55.5          | 33.3             | 85.0          | 80.0  | 26.8    | 52.4          |
 
 Please refer to the training script: [`./open-r1/train.sh`](./open-r1/train.sh)
 
-> Table: The zero-shot pass@1 performance of the 7B models across five mathematical reasoning benchmarks. $\dagger$: reproduced results using the released code. $\ddagger$: results from open-rs.
+> Table: The zero-shot pass@1 performance of the 7B models across five mathematical reasoning benchmarks. $\dagger$: reproduced results using the released code. $\ddagger$: results from open-rs. $^\star$: results from Dr.GRPO.
 > | 7B Models                                      | Average       | AIME24 | MATH-500 | AMC23         | Minerva | OlympiadBench |
 > |------------------------------------------------|:-------------:|:------:|:--------:|:-------------:|:-------:|:-------------:|
 > | Qwen-2.5-Math-7B-Instruct $^\ddagger$          | 43.8          | 13.3   | 79.8     | 50.6          | 34.6    | 40.7          |
 > | Qwen2.5-Math-7B                                | 30.9          | 13.3   | 57.6     | 45.0          | 14.7    | 23.7          |
 > | rStar-Math-7B                                  | -             | 26.7   | 78.4     | 47.5          | -       | 47.1          |
 > | Eurus-2-7B-PRIME                               | 48.9          | 26.7   | 79.2     | 57.8          | 38.6    | 42.1          |
+> | Oat-Zero-7B                                    | 51.4          | 43.3   | 80.0     | 62.7          | 30.1    | 41.0          |
 > | Oat-Zero-7B $^\dagger$                         | 47.8          | 30.0   | 80.6     | 55.4          | 29.0    | 44.0          |
 > | OpenReasoner-Zero-7B @ 8k                      | 45.9          | 13.3   | 82.4     | 54.2          | 31.6    | 47.9          |
-> | SimpleRL-Zero-7B                               | 46.6          | 26.7   | 78.2     | 60.2          | 27.6    | 40.3          |
-> | GPG-7B                                         | 51.0          | 33.3   | 80.0     | 65.0          | 34.2    | 42.4          |
+> | SimpleRL-Zero-7B $^\star$                      | 46.6          | 26.7   | 78.2     | 60.2          | 27.6    | 40.3          |
+> | GPG-7B                                         | 57.7          | 36.7   | 84.6     | 82.5          | 39.0    | 45.8          |
 
 
 > Table: Math reasoning results on Qwen2.5-Math-7B model. $\dagger$: reproduction use the released code.
@@ -84,8 +85,9 @@ Please refer to the training script: [`./open-r1/train.sh`](./open-r1/train.sh)
 > | Qwen2.5-Math-7B                                              | 30.9      | 13.3      | 57.6      | 45.0  | 14.7      | 23.7          |
 > | GPRO                                                         | 43.7      | 16.7      | 73.4      | 62.5  | 30.2      | 35.7          |
 > | GPG($F_{norm}=1, \alpha = 1$)                                | 43.9      | 23.3      | 76.3      | 52.5  | 30.1      | 37.4          |
-> | GPG($F_{norm}={std \{ R(o) \} }, \alpha = 1 $)                   | 45.3      | 23.3      | 73.6      | 60.0  | 30.5      | 39.3          |
+> | GPG($F_{norm}={std \{ R(o) \} }, \alpha = 1 $)               | 45.3      | 23.3      | 73.6      | 60.0  | 30.5      | 39.3          |
 > | GPG($F_{norm} =1, \alpha = \frac{B}{B-M}$)                   | 47.8      | 30.0      | 75.0      | 62.5  | 33.1      | 38.2          |
+> | GPG($F_{norm}$=1, $\alpha=\frac{B}{B-M}, \beta_{th}=0.6$)    | 48.3      | 30.0      | 76.2      | 62.5  | 34.2      | 39.0          |
 > | Dr. GRPO $^\dagger$                                          | 43.7      | 26.7      | 74.6      | 50.0  | 30.1      | 37.3          |
 
 ## Experiments on multimodal tasks
