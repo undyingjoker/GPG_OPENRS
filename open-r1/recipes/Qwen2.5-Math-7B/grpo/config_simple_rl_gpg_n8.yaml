@@ -50,6 +50,7 @@ reward_funcs:
 - accuracy
 reward_weights:
 - 1.0
-save_strategy: "no"
+save_strategy: "epoch"
 seed: 42
 warmup_ratio: 0.1
+
