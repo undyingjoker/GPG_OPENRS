@@ -19,6 +19,7 @@ from typing import Any, Callable, Optional, Union
 
 import torch
 import torch.utils.data
+import torch.nn.functional as F
 import transformers
 from datasets import Dataset, IterableDataset
 from packaging import version
@@ -48,6 +49,10 @@ from trl.trainer.utils import generate_model_card, get_comet_experiment_url
 
 import copy
 import json
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 # from InternVL2 import load_image
 
@@ -331,6 +336,11 @@ class Qwen2VLGRPOTrainer(Trainer):
             if isinstance(reward_func, PreTrainedModel):
                 self.reward_funcs[i] = self.accelerator.prepare_model(reward_func, evaluation_mode=True)
 
+        # set re-sample dataloader
+        self._current_epoch_dataloader = None
+        self._current_epoch_iterator = None
+
+
     def _set_signature_columns_if_needed(self):
         # If `self.args.remove_unused_columns` is True, non-signature columns are removed.
         # By default, this method sets `self._signature_columns` to the model's expected inputs.
@@ -353,156 +363,372 @@ class Qwen2VLGRPOTrainer(Trainer):
             per_token_logps.append(token_log_prob)
         return torch.stack(per_token_logps)
 
+    def get_local_batch_samples(self, epoch_iterator, num_batches):
+        batch_samples = []
+        num_items_in_batch = None
+        end = False
+        for _ in range(num_batches):
+            try:
+                batch_samples += [next(epoch_iterator)]
+            except StopIteration:
+                end = True
+                break
+
+        if len(batch_samples) > 0 and "labels" in batch_samples[0]:
+            # For now we don't support object detection
+            try:
+                num_items_in_batch = sum([(batch["labels"].ne(-100)).sum() for batch in batch_samples])
+            except (TypeError, AttributeError):
+                pass
+
+        if self.args.average_tokens_across_devices and num_items_in_batch is not None:
+            num_items_in_batch = self.accelerator.gather(num_items_in_batch).sum().item()
+
+        if torch.is_tensor(num_items_in_batch):
+            num_items_in_batch = num_items_in_batch.item()
+
+        return batch_samples, num_items_in_batch, end
+    
+    def get_train_dataloader(self):
+        dataloader = super().get_train_dataloader()
+        self._current_epoch_dataloader = dataloader
+        try:
+            self._current_epoch_iterator = iter(dataloader)
+            logger.info("Captured current epoch dataloader and iterator for GPG-style resampling.")
+        except Exception:
+            self._current_epoch_iterator = None
+            logger.warning("Failed to capture current epoch dataloader and iterator for GPG-style resampling.")
+        return dataloader
 
     # Trainer "prepares" the inputs before calling `compute_loss`. It converts to tensor and move to device.
     # Since we preprocess the data in `compute_loss`, we need to override this method to skip this step.
     def _prepare_inputs(self, inputs: dict[str, Union[torch.Tensor, Any]]) -> dict[str, Union[torch.Tensor, Any]]:
         return inputs
 
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        if return_outputs:
-            raise ValueError("The GRPOTrainer does not support returning outputs")
 
-        prompts = [x["prompt"] for x in inputs]
-        prompts_text = [apply_chat_template(example, self.processing_class)["prompt"] for example in inputs]
-        images = [x["image"] for x in inputs]
-        prompt_inputs = self.processing_class(
-            text=prompts_text,
-            images=images,
-            return_tensors="pt",
-            padding=True,
-            padding_side="left",
-            add_special_tokens=False,
-        )
-        prompt_inputs = super()._prepare_inputs(prompt_inputs)
-
-        prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
-        pixel_values = prompt_inputs["pixel_values"]
-        image_grid_thw = prompt_inputs["image_grid_thw"]
-
-        
-        if self.max_prompt_length is not None:
-            prompt_ids = prompt_ids[:, -self.max_prompt_length :]
-            prompt_mask = prompt_mask[:, -self.max_prompt_length :]
-
-        # Generate completions
-        with unwrap_model_for_generation(model, self.accelerator) as unwrapped_model:
-            #prompt_completion_ids = unwrapped_model.generate(**prompt_inputs, generation_config=self.generation_config)
-            # Generate N times, each generate one with the temp_generation_config , stack the output_ids to prompt_completion_ids, pad the empty places with number 151613
-            num_generations = self.generation_config.num_return_sequences
-            temp_generation_config = copy.deepcopy(self.generation_config)
-            temp_generation_config.num_return_sequences = 1
-
-            all_completions = []
-
-            for i in range(num_generations):  # -1 because we already have one generation
-                completion = unwrapped_model.generate(**prompt_inputs, generation_config=temp_generation_config)
-                all_completions.append(completion)
-            
-            # Stack all completions and pad if needed
-            max_length = max(completion.size(1) for completion in all_completions)
-            padded_completions = []
-
-            for completion in all_completions:
-                if completion.size(1) < max_length:
-                    padding = torch.full((completion.size(0), max_length - completion.size(1)), 
-                                    self.processing_class.tokenizer.pad_token_id, 
-                                    dtype=completion.dtype,
-                                    device=completion.device)
-                    padded_completion = torch.cat([completion, padding], dim=1)
-                else:
-                    padded_completion = completion
-                padded_completions.append(padded_completion)
-
-            # Stack all padded completions
-            prompt_completion_ids = torch.cat(padded_completions, dim=0)
-
-            prompt_length = prompt_ids.size(1)
-            prompt_ids = prompt_completion_ids[:, :prompt_length]
-            completion_ids = prompt_completion_ids[:, prompt_length:]
-            prompt_mask = prompt_mask.repeat_interleave(self.num_generations, dim=0)
-
-        # Mask everything after the first EOS token
-        is_eos = completion_ids == self.processing_class.eos_token_id
+    def _generate_and_score_completions(
+        self, model, inputs: dict[str, Union[torch.Tensor, Any]]
+    ) -> dict[str, Union[torch.Tensor, Any]]:
+        max_resample_attempts = 20
+        n_valid_samples = 0
         device = self.accelerator.device
-        eos_idx = torch.full((is_eos.size(0),), is_eos.size(1), dtype=torch.long, device=device)
-        eos_idx[is_eos.any(dim=1)] = is_eos.int().argmax(dim=1)[is_eos.any(dim=1)]
-        sequence_indices = torch.arange(is_eos.size(1), device=device).expand(is_eos.size(0), -1)
-        completion_mask = (sequence_indices <= eos_idx.unsqueeze(1)).int()
+        new_rewards_per_func = None
+        new_rewards = None
+        new_prompt_ids = None
+        new_prompt_mask = None
+        new_completion_ids = None
+        new_completion_mask = None
+        new_pixel_values = None
+        new_image_grid_thw = None
 
-        # Concatenate prompt_mask with completion_mask for logit computation
-        attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)  # (B*G, P+C)
-        pixel_values = prompt_inputs["pixel_values"][None].repeat_interleave(self.num_generations, dim=0)
-        image_grid_thw = prompt_inputs["image_grid_thw"].repeat_interleave(self.num_generations, dim=0)
+        for current_resample_attempt in range(max_resample_attempts):
+            if current_resample_attempt != 0 or len(inputs) == 0:
+                batch_samples, num_items_in_batch, end = self.get_local_batch_samples(self._current_epoch_iterator, 1)
+                if end:
+                    self._current_epoch_iterator = iter(self._current_epoch_dataloader)
+                    batch_samples, num_items_in_batch, end = self.get_local_batch_samples(self._current_epoch_iterator, 1)
+                inputs = batch_samples[0]
+            
+            prompts = [x["prompt"] for x in inputs]
+            prompts_text = [apply_chat_template(example, self.processing_class)["prompt"] for example in inputs]
+            images = [x["image"] for x in inputs]
+            prompt_inputs = self.processing_class(
+                text=prompts_text,
+                images=images,
+                return_tensors="pt",
+                padding=True,
+                padding_side="left",
+                add_special_tokens=False,
+            )
+            prompt_inputs = super()._prepare_inputs(prompt_inputs)
+            
+            prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
+            pixel_values = prompt_inputs["pixel_values"]
+            image_grid_thw = prompt_inputs["image_grid_thw"]
 
-        per_token_logps = self._get_per_token_logps(model, prompt_completion_ids, attention_mask, pixel_values, image_grid_thw)
-        # Get rid of the prompt (-1 because of the shift done in get_per_token_logps)
-        per_token_logps = per_token_logps[:, prompt_length - 1 :]
+            if self.max_prompt_length is not None:
+                prompt_ids = prompt_ids[:, -self.max_prompt_length :]
+                prompt_mask = prompt_mask[:, -self.max_prompt_length :]
 
-        if self.args.pg_name in ['grpo']:
+            # Generate completions
+            with unwrap_model_for_generation(model, self.accelerator) as unwrapped_model:
+                #prompt_completion_ids = unwrapped_model.generate(**prompt_inputs, generation_config=self.generation_config)
+                # Generate N times, each generate one with the temp_generation_config , stack the output_ids to prompt_completion_ids, pad the empty places with number 151613
+                num_generations = self.generation_config.num_return_sequences
+                temp_generation_config = copy.deepcopy(self.generation_config)
+                temp_generation_config.num_return_sequences = 1
+
+                all_completions = []
+
+                for i in range(num_generations):  # -1 because we already have one generation
+                    completion = unwrapped_model.generate(**prompt_inputs, generation_config=temp_generation_config)
+                    all_completions.append(completion)
+                
+                # Stack all completions and pad if needed
+                max_length = max(completion.size(1) for completion in all_completions)
+                padded_completions = []
+
+                for completion in all_completions:
+                    if completion.size(1) < max_length:
+                        padding = torch.full((completion.size(0), max_length - completion.size(1)), 
+                                        self.processing_class.tokenizer.pad_token_id, 
+                                        dtype=completion.dtype,
+                                        device=completion.device)
+                        padded_completion = torch.cat([completion, padding], dim=1)
+                    else:
+                        padded_completion = completion
+                    padded_completions.append(padded_completion)
+
+                # Stack all padded completions
+                prompt_completion_ids = torch.cat(padded_completions, dim=0)
+
+                prompt_length = prompt_ids.size(1)
+                prompt_ids = prompt_completion_ids[:, :prompt_length]
+                completion_ids = prompt_completion_ids[:, prompt_length:]
+                prompt_mask = prompt_mask.repeat_interleave(self.num_generations, dim=0)
+
+            # Mask everything after the first EOS token
+            is_eos = completion_ids == self.processing_class.eos_token_id
+            device = self.accelerator.device
+            eos_idx = torch.full((is_eos.size(0),), is_eos.size(1), dtype=torch.long, device=device)
+            eos_idx[is_eos.any(dim=1)] = is_eos.int().argmax(dim=1)[is_eos.any(dim=1)]
+            sequence_indices = torch.arange(is_eos.size(1), device=device).expand(is_eos.size(0), -1)
+            completion_mask = (sequence_indices <= eos_idx.unsqueeze(1)).int()
+
+            # Concatenate prompt_mask with completion_mask for logit computation
+            attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)  # (B*G, P+C)
+            pixel_values = prompt_inputs["pixel_values"][None].repeat_interleave(self.num_generations, dim=0)
+            image_grid_thw = prompt_inputs["image_grid_thw"].repeat_interleave(self.num_generations, dim=0)
+
+            # Decode the generated completions
+            completions = self.processing_class.batch_decode(completion_ids, skip_special_tokens=True)
+            if is_conversational(inputs[0]):
+                completions = [[{"role": "assistant", "content": completion}] for completion in completions]
+
+            # Compute the rewards
+            prompts = [prompt for prompt in prompts for _ in range(self.num_generations)]
+
+            rewards_per_func = torch.zeros(len(prompts), len(self.reward_funcs), device=device)
+            for i, (reward_func, reward_processing_class) in enumerate(
+                zip(self.reward_funcs, self.reward_processing_classes)
+            ):
+                if isinstance(reward_func, PreTrainedModel):
+                    if is_conversational(inputs[0]):
+                        messages = [{"messages": p + c} for p, c in zip(prompts, completions)]
+                        texts = [apply_chat_template(x, reward_processing_class)["text"] for x in messages]
+                    else:
+                        texts = [p + c for p, c in zip(prompts, completions)]
+                    reward_inputs = reward_processing_class(
+                        texts, return_tensors="pt", padding=True, padding_side="right", add_special_tokens=False
+                    )
+                    reward_inputs = super()._prepare_inputs(reward_inputs)
+                    with torch.inference_mode():
+                        rewards_per_func[:, i] = reward_func(**reward_inputs).logits[:, 0]  # Shape (B*G,)
+                else:
+                    # Repeat all input columns (but "prompt" and "completion") to match the number of generations
+                    reward_kwargs = {key: [] for key in inputs[0].keys() if key not in ["prompt", "completion"]}
+                    for key in reward_kwargs:
+                        for example in inputs:
+                            # Repeat each value in the column for `num_generations` times
+                            reward_kwargs[key].extend([example[key]] * self.num_generations)
+                    output_reward_func = reward_func(prompts=prompts, completions=completions, **reward_kwargs)
+                    rewards_per_func[:, i] = torch.tensor(output_reward_func, dtype=torch.float32, device=device)
+
+            # Sum the rewards from all reward functions
+            rewards = rewards_per_func.sum(dim=1)
+
+            log_trajectories = True
+            if log_trajectories:
+                save_dir = f"trajectories/trajectories_{self.args.run_name}/step{self.state.global_step}"
+                os.makedirs(save_dir, exist_ok=True)
+                save_path = os.path.join(save_dir, f"rank{self.accelerator.process_index}.jsonl")
+                with open(save_path, "w") as f:
+                    json.dump({
+                        'trajectories': [{"messages": {"prompt": p[0], "response": c[0]} if len(p) == 1 else {"prompt": p[1]['text'], "response":c}, "solution": inputs[0]['solution'], "reward": r} for p, c, r in zip(prompts, completions, rewards.view(self.num_generations).tolist())],
+                    }, f, indent=2)
+
             with torch.inference_mode():
-                if self.ref_model is not None:
-                    ref_per_token_logps = self._get_per_token_logps(self.ref_model, prompt_completion_ids, attention_mask, pixel_values, image_grid_thw)
-                else:
-                    with self.accelerator.unwrap_model(model).disable_adapter():
-                        ref_per_token_logps = self._get_per_token_logps(model, prompt_completion_ids, attention_mask, pixel_values, image_grid_thw)
-            ref_per_token_logps = ref_per_token_logps[:, prompt_length - 1 :]
+                gathered_rewards_per_func = self.accelerator.gather(rewards_per_func)
+                gathered_rewards = gathered_rewards_per_func.sum(dim=1)
 
-        # Decode the generated completions
-        completions = self.processing_class.batch_decode(completion_ids, skip_special_tokens=True)
-        if is_conversational(inputs[0]):
-            completions = [[{"role": "assistant", "content": completion}] for completion in completions]
+                gathered_mean_grouped_rewards = gathered_rewards.view(-1, self.num_generations).mean(dim=1)
+                gathered_std_grouped_rewards = gathered_rewards.view(-1, self.num_generations).std(dim=1)
 
-        # Compute the rewards
-        prompts = [prompt for prompt in prompts for _ in range(self.num_generations)]
+                # 找出标准差为 0 的组
+                identical_value_mask = gathered_std_grouped_rewards <= 1e-5
+                easy_mask = gathered_mean_grouped_rewards >= len(self.reward_funcs) - 1e-5
+                hard_mask = gathered_mean_grouped_rewards <= 1e-5
 
-        rewards_per_func = torch.zeros(len(prompts), len(self.reward_funcs), device=device)
-        for i, (reward_func, reward_processing_class) in enumerate(
-            zip(self.reward_funcs, self.reward_processing_classes)
-        ):
-            if isinstance(reward_func, PreTrainedModel):
-                if is_conversational(inputs[0]):
-                    messages = [{"messages": p + c} for p, c in zip(prompts, completions)]
-                    texts = [apply_chat_template(x, reward_processing_class)["text"] for x in messages]
-                else:
-                    texts = [p + c for p, c in zip(prompts, completions)]
-                reward_inputs = reward_processing_class(
-                    texts, return_tensors="pt", padding=True, padding_side="right", add_special_tokens=False
-                )
-                reward_inputs = super()._prepare_inputs(reward_inputs)
-                with torch.inference_mode():
-                    rewards_per_func[:, i] = reward_func(**reward_inputs).logits[:, 0]  # Shape (B*G,)
+                # 计算标准差为 0 的组的数目
+                num_identical_reward_groups = identical_value_mask.sum().item()
+                num_easy_problem = easy_mask.sum().item()
+                num_hard_problem = hard_mask.sum().item()
+                num_reward_samples = gathered_std_grouped_rewards.numel()
+
+                # lr_ratio = num_identical_reward_groups / num_reward_samples
+                n_valid_samples += num_reward_samples - num_identical_reward_groups
+
+            
+            my_rewards_stds = rewards.view(-1, self.num_generations).std(dim=1)
+
+            my_valid_value_mask = torch.where(my_rewards_stds > 0)[0]
+            my_identical_value_mask = torch.where(my_rewards_stds == 0)[0]
+
+            num_questions = len(prompts) // self.num_generations
+            _b_valid = my_valid_value_mask.shape[0] * self.num_generations
+            _b_ident = my_identical_value_mask.shape[0] * self.num_generations
+            assert _b_valid + _b_ident == len(prompts)
+
+            # prompt_completion_ids, attention_mask 这两个使用拼接的方式构建出来
+            # pixel_values, image_grid_thw 这两个直接保存
+            if _b_valid > 0:
+                valid_rewards = rewards.reshape(num_questions, self.num_generations)[my_valid_value_mask].reshape(_b_valid)
+                valid_prompt_ids = prompt_ids.reshape(num_questions, self.num_generations, -1)[my_valid_value_mask].reshape(_b_valid, -1)
+                valid_prompt_mask = prompt_mask.reshape(num_questions, self.num_generations, -1)[my_valid_value_mask].reshape(_b_valid, -1)
+                valid_completion_ids = completion_ids.reshape(num_questions, self.num_generations, -1)[
+                    my_valid_value_mask].reshape(_b_valid, -1)
+                valid_completion_mask = completion_mask.reshape(num_questions, self.num_generations, -1)[
+                    my_valid_value_mask].reshape(_b_valid, -1)
+                
+                # 先这样处理，如果遇到valid_image_grid_thw中图片thw不一致，那么需要专门处理
+                valid_pixel_values = pixel_values.reshape(num_questions, self.num_generations, -1, pixel_values.shape[-1])[
+                    my_valid_value_mask].reshape(-1, pixel_values.shape[-1])
+                valid_image_grid_thw = image_grid_thw.reshape(num_questions, self.num_generations, -1)[my_valid_value_mask].reshape(_b_valid, -1)
+
+                # rewards_per_func
+                valid_rewards_per_func = rewards_per_func.reshape(num_questions, self.num_generations, -1)[
+                    my_valid_value_mask].reshape(_b_valid, -1)
             else:
-                # Repeat all input columns (but "prompt" and "completion") to match the number of generations
-                reward_kwargs = {key: [] for key in inputs[0].keys() if key not in ["prompt", "completion"]}
-                for key in reward_kwargs:
-                    for example in inputs:
-                        # Repeat each value in the column for `num_generations` times
-                        reward_kwargs[key].extend([example[key]] * self.num_generations)
-                output_reward_func = reward_func(prompts=prompts, completions=completions, **reward_kwargs)
-                rewards_per_func[:, i] = torch.tensor(output_reward_func, dtype=torch.float32, device=device)
+                valid_rewards, valid_prompt_ids, valid_prompt_mask, valid_completion_ids, valid_completion_mask, valid_pixel_values, \
+                    valid_image_grid_thw, valid_rewards_per_func = [None] * 8
+                
+            if _b_ident > 0:
+                identical_rewards = rewards.reshape(num_questions, self.num_generations)[
+                    my_identical_value_mask].reshape(_b_ident)
+                identical_prompt_ids = prompt_ids.reshape(num_questions, self.num_generations, -1)[
+                    my_identical_value_mask].reshape(_b_ident, -1)
+                identical_prompt_mask = prompt_mask.reshape(num_questions, self.num_generations, -1)[
+                    my_identical_value_mask].reshape(_b_ident, -1)
+                identical_completion_ids = completion_ids.reshape(num_questions, self.num_generations, -1)[
+                    my_identical_value_mask].reshape(_b_ident, -1)
+                identical_completion_mask = completion_mask.reshape(num_questions, self.num_generations, -1)[
+                    my_identical_value_mask].reshape(_b_ident, -1)
+                # 先这样处理，如果遇到identical_image_grid_thw中图片thw不一致，那么需要专门处理
+                identical_pixel_values = pixel_values.reshape(num_questions, self.num_generations, -1, pixel_values.shape[-1])[
+                    my_identical_value_mask].reshape(-1, pixel_values.shape[-1])
+                identical_image_grid_thw = image_grid_thw.reshape(num_questions, self.num_generations, -1)[
+                    my_identical_value_mask].reshape(_b_ident, -1)
+                
+                identical_rewards_per_func = rewards_per_func.reshape(num_questions, self.num_generations, -1)[
+                    my_identical_value_mask].reshape(_b_ident, -1)
+            else:
+                identical_rewards, identical_prompt_ids, identical_prompt_mask, identical_completion_ids, identical_completion_mask, identical_pixel_values, \
+                    identical_image_grid_thw, identical_rewards_per_func = [None] * 8
 
-        # Sum the rewards from all reward functions
-        rewards = rewards_per_func.sum(dim=1)
+            new_rewards = d_concat(new_rewards, valid_rewards)
+            new_prompt_mask = d_concat_with_padding(new_prompt_mask, valid_prompt_mask, 0, left_pad=True)
+            new_prompt_ids = d_concat_with_padding(new_prompt_ids, valid_prompt_ids, self.processing_class.pad_token_id, left_pad=True)
+            new_completion_mask = d_concat_with_padding(new_completion_mask, valid_completion_mask, 0, left_pad=False)
+            new_completion_ids = d_concat_with_padding(new_completion_ids, valid_completion_ids, self.processing_class.pad_token_id, left_pad=False)
 
-        # Compute grouped-wise rewards
+            new_image_grid_thw = d_concat(new_image_grid_thw, valid_image_grid_thw)
+            new_pixel_values = d_concat(new_pixel_values, valid_pixel_values)
+
+            new_rewards_per_func = d_concat(new_rewards_per_func, valid_rewards_per_func)
+
+            if n_valid_samples < self.args.min_inverse_alpha * num_reward_samples and current_resample_attempt != max_resample_attempts - 1:
+                logger.info(f"keep generating more examples: the {current_resample_attempt}-th mini-batch")
+                continue
+
+            # 重新组装样本batch
+            rewards = d_concat(new_rewards, identical_rewards)[:len(prompts)]
+            prompt_mask = d_concat_with_padding(new_prompt_mask, identical_prompt_mask, 0, left_pad=True)[:len(prompts)]
+            prompt_ids = d_concat_with_padding(new_prompt_ids, identical_prompt_ids, self.processing_class.pad_token_id, left_pad=True)[:len(prompts)]
+            completion_mask = d_concat_with_padding(new_completion_mask, identical_completion_mask, 0, left_pad=False)[:len(prompts)]
+            completion_ids = d_concat_with_padding(new_completion_ids, identical_completion_ids, self.processing_class.pad_token_id, left_pad=False)[:len(prompts)]
+
+            image_grid_thw = d_concat(new_image_grid_thw, identical_image_grid_thw)[:len(prompts)]
+            pixel_values_num = torch.sum(torch.prod(image_grid_thw, dim=1))
+            pixel_values = d_concat(new_pixel_values, identical_pixel_values)[:pixel_values_num]
+
+            rewards_per_func = d_concat(new_rewards_per_func, identical_rewards_per_func)[:len(prompts)]
+
+            break
+
         mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1)
         std_grouped_rewards = rewards.view(-1, self.num_generations).std(dim=1)
 
         # Normalize the rewards to compute the advantages
         mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
         std_grouped_rewards = std_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
-        advantages = (rewards - mean_grouped_rewards) / (std_grouped_rewards + 1e-4)
 
-        log_trajectories = True
-        if log_trajectories:
-            save_dir = f"trajectories/trajectories_{self.args.run_name}/step{self.state.global_step}"
-            os.makedirs(save_dir, exist_ok=True)
-            save_path = os.path.join(save_dir, f"rank{self.accelerator.process_index}.jsonl")
-            with open(save_path, "w") as f:
-                json.dump({
-                    'trajectories': [{"messages": {"prompt": p[0], "response": c[0]} if len(p) == 1 else {"prompt": p[1]['text'], "response":c}, "solution": inputs[0]['solution'], "reward": r} for p, c, r in zip(prompts, completions, rewards.view(self.num_generations).tolist())],
-                }, f, indent=2)
+        if self.args.adjust_gd:
+            advantages = (rewards - mean_grouped_rewards)
+        else:
+            advantages = (rewards - mean_grouped_rewards) / (std_grouped_rewards + 1e-4)
+
+        inverse_alpha = n_valid_samples / num_reward_samples
+        inverse_alpha = min(1.0, inverse_alpha)
+
+        return {
+            "rewards": rewards,
+            "advantages": advantages,
+            "rewards_per_func": rewards_per_func,
+            "std_grouped_rewards": std_grouped_rewards,
+            "n_valid_samples": n_valid_samples,
+            "num_reward_samples": num_reward_samples,
+
+            "prompt_mask": prompt_mask,
+            "prompt_ids": prompt_ids,
+            "completion_mask": completion_mask,
+            "completion_ids": completion_ids,
+            "pixel_values": pixel_values,
+            "image_grid_thw": image_grid_thw,
+            "inverse_alpha": inverse_alpha,
+            
+            "current_resample_attempt": current_resample_attempt,
+
+        }
+
+
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        if return_outputs:
+            raise ValueError("The GRPOTrainer does not support returning outputs")
+
+        inputs = self._generate_and_score_completions(model, inputs)
+        prompt_completion_ids = torch.cat([inputs["prompt_ids"], inputs["completion_ids"]], dim=1)
+        completion_mask = inputs["completion_mask"]
+        attention_mask = torch.cat([inputs["prompt_mask"], inputs["completion_mask"]], dim=1)
+        pixel_values = inputs["pixel_values"]
+        image_grid_thw = inputs["image_grid_thw"]
+        prompt_length = inputs["prompt_ids"].size(1)
+
+        rewards = inputs["rewards"]
+        advantages = inputs["advantages"]
+        rewards_per_func = inputs["rewards_per_func"]
+        std_grouped_rewards = inputs["std_grouped_rewards"]
+
+        inverse_alpha = inputs["inverse_alpha"]
+
+        n_valid_samples = inputs["n_valid_samples"]
+        num_reward_samples = inputs["num_reward_samples"]
+
+        current_resample_attempt = inputs["current_resample_attempt"]
+
+
+        per_token_logps = self._get_per_token_logps(model, prompt_completion_ids, attention_mask, pixel_values, image_grid_thw)
+        # Get rid of the prompt (-1 because of the shift done in get_per_token_logps)
+        per_token_logps = per_token_logps[:, prompt_length - 1 :]
+
+        # if self.args.pg_name in ['grpo', 'pinsker']:
+        with torch.inference_mode():
+            if self.ref_model is not None:
+                ref_per_token_logps = self._get_per_token_logps(self.ref_model, prompt_completion_ids, attention_mask, pixel_values, image_grid_thw)
+            else:
+                with self.accelerator.unwrap_model(model).disable_adapter():
+                    ref_per_token_logps = self._get_per_token_logps(model, prompt_completion_ids, attention_mask, pixel_values, image_grid_thw)
+        ref_per_token_logps = ref_per_token_logps[:, prompt_length - 1 :]
+
 
         if self.args.pg_name == 'grpo':
             # Compute the KL divergence between the model and the reference model
@@ -534,14 +760,22 @@ class Qwen2VLGRPOTrainer(Trainer):
 
         self._metrics["reward_std"].append(self.accelerator.gather_for_metrics(std_grouped_rewards).mean().item())
 
+        self._metrics['n_valid_samples'].append(n_valid_samples)
+        self._metrics['n_reward_samples'].append(num_reward_samples)
+        self._metrics['inverse_alpha'].append(inverse_alpha)
+        self._metrics['current_resample_attempt'].append(current_resample_attempt)
+
         if self.args.pg_name == 'grpo':
             mean_kl = ((per_token_kl * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)).mean()
             self._metrics["kl"].append(self.accelerator.gather_for_metrics(mean_kl).mean().item())
         elif self.args.pg_name == 'gpg':
             # mean_kl = 0.0
-            # self._metrics["kl"].append(mean_kl)
-            pass
+            per_token_kl = torch.exp(ref_per_token_logps - per_token_logps) - (ref_per_token_logps - per_token_logps) - 1
+            mean_kl = ((per_token_kl * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)).mean()
+            self._metrics["kl_gpg"].append(self.accelerator.gather_for_metrics(mean_kl).mean().item())
 
+        if self.args.adjust_gd:
+            loss = loss / (inverse_alpha + 1e-5)
         return loss
 
     def log(self, logs: dict[str, float], start_time: Optional[float] = None) -> None:
@@ -610,3 +844,37 @@ class Qwen2VLGRPOTrainer(Trainer):
         )
 
         model_card.save(os.path.join(self.args.output_dir, "README.md"))
+
+def d_concat(old_d, new_d):
+    if new_d is None:
+        return old_d
+    if old_d is None:
+        return new_d
+    
+    return torch.concat([old_d, new_d])
+
+
+def d_concat_with_padding(old_d, new_d, pad_token_id, left_pad=False):
+    if new_d is None:
+        return old_d
+    if old_d is None:
+        return new_d
+    
+    if new_d.shape[1] < old_d.shape[1]:
+        new_d = pad_sequence_to_length(new_d, old_d.shape[1], pad_token_id, left_pad)
+    else:
+        old_d = pad_sequence_to_length(old_d, new_d.shape[1], pad_token_id, left_pad)
+    
+    return torch.concat([old_d, new_d])
+
+def pad_sequence_to_length(tensors, max_seq_len, pad_token_id, left_pad=False):
+    """
+    pad a 2D tensors (e.g. responses, logprobs) in the last dim to max_seq_length.
+    input shape: [bs, seq_length]
+    output shape: [bs, max_seq_length]
+    (0, max_seq_len - tensors.shape[-1]) means right pad to max_seq_length and no left pad
+    """
+    if tensors.shape[-1] >= max_seq_len:
+        return tensors
+    pad_tuple = (max_seq_len - tensors.shape[-1], 0) if left_pad else (0, max_seq_len - tensors.shape[-1])
+    return F.pad(tensors, pad_tuple, "constant", pad_token_id)

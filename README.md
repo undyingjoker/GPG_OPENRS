@@ -104,7 +104,7 @@ The results are as follows:
 > | Qwen2-VL-2B                | 31.38      | 54.69      | 22.46       | 0.16        | 31.66      |
 > | + SFT                      | 57.84      | 60.02      | 68.92       | 55.00       | 45.83      |
 > | + GRPO                     | 59.47      | 59.64      | 66.76       | 54.16       | 56.66      |
-> | + GPG                      | 69.11      | 65.36      | 82.62       | 67.83       | 60.67      |
+> | + GPG                      | 76.15      | 66.62      | 83.23       | 81.66       | 75.50      |
 
 
 ### Experiments on Visual-RFT
@@ -119,7 +119,7 @@ The results are as follows:
 > | Qwen2-VL-2B                | 26.9                 | 30.1                | 25.3                 |
 > | + SFT                      | 28.3                 | 29.7                | 25.3                 |
 > | + GRPO                     | 37.6                 | 34.4                | 34.4                 |
-> | + GPG                      | 51.5                 | 53.4                | 49.5                 |
+> | + GPG                      | 51.8                 | 51.3                | 50.4                 |
 
 
 > Table: 4-shot Results on Four Fine-grained Classification Datasets. GPG shows consistently better results than GRPO on $4$ classification datasets.
@@ -128,7 +128,7 @@ The results are as follows:
 > | Qwen2-VL-2B     | 56.0      | 54.8      | 66.4      | 45.9      | 56.8      |
 > | + SFT           | 55.6      | 58.5      | 55.5      | 67.9      | 40.5      |
 > | + GRPO          | 81.9      | 71.4      | 86.1      | 74.8      | 95.3      |
-> | + GPG           | 86.0      | 73.0      | 87.1      | 86.8      | 97.1      |
+> | + GPG           | 89.0      | 79.3      | 90.8      | 88.5      | 97.5      |
 
 ### Experiments on R1-V
 
@@ -139,7 +139,7 @@ Please refer to the training script: [`./R1-V/src/scripts/run_grpo_GEOQA_qwen2.5
 > |----------------------------|:---------------------:|
 > | Qwen2.5-VL-3B-Instruct     | 35.41                 |
 > | + GRPO                     | 47.48                 |
-> | + GPG                      | 50.80                 |
+> | + GPG                      | 51.33                 |
 
 
 

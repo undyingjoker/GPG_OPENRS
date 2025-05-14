@@ -61,9 +61,17 @@ class GRPOScriptArguments(ScriptArguments):
         metadata={"help": "Whether to freeze the vision model parameters during training"},
     )
     pg_name: Optional[str] = field(
-        #可选 grpo gpg
+        #可选 grpo gpg pinsker
         default="grpo",
-        metadata={"help": "Only train the specified part of the model (grpo, gpg)"},
+        metadata={"help": "Only train the specified part of the model (grpo, gpg, pinsker)"},
+    )
+    adjust_gd: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether to adjust the gradient of the model"},
+    )
+    min_inverse_alpha: Optional[float] = field(
+        default=0.4,
+        metadata={"help": "Minimum inverse alpha for the model"},
     )
 
 
@@ -150,7 +158,9 @@ reward_funcs_registry = {
 
 def main(script_args, training_args, model_args):
     training_args.pg_name = script_args.pg_name
-    assert training_args.pg_name in ["grpo", "gpg"], f"pg_name {training_args.pg_name} is not supported"
+    assert training_args.pg_name in ["grpo", "gpg", "pinsker"], f"pg_name {training_args.pg_name} is not supported"
+    training_args.adjust_gd = script_args.adjust_gd
+    training_args.min_inverse_alpha = script_args.min_inverse_alpha
     # Get reward functions
     reward_funcs = [reward_funcs_registry[func] for func in script_args.reward_funcs]
 

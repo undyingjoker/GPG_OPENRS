@@ -1,7 +1,12 @@
 timestamp=$1
 echo "timestamp: ${timestamp}"
-pg_name="grpo"
-# pg_name="gpg"
+# pg_name="grpo"
+pg_name="gpg"
+
+adjust_gd="true"
+
+# Wandb
+export WANDB_PROJECT="visual-rft"
 
 DATA_PATH=laolao77/ViRFT_CLS_flower_4_shot
 CKPT_PATH=Qwen2-VL-2B-Instruct
@@ -22,13 +27,14 @@ torchrun --master_addr ${MASTER_ADDR} --master-port ${MASTER_PORT} \
     --dataset_name ${DATA_PATH} \
     --deepspeed src/virft/local_scripts/zero3.json \
     --pg_name ${pg_name} \
+    --adjust_gd ${adjust_gd} \
     --temperature 0.9 \
     --max_prompt_length 1024 \
     --per_device_train_batch_size 1 \
     --gradient_accumulation_steps 2 \
     --logging_steps 1 \
     --bf16 \
-    --report_to tensorboard \
+    --report_to wandb \
     --gradient_checkpointing false \
     --attn_implementation flash_attention_2 \
     --max_pixels 401408 \

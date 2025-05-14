@@ -54,14 +54,20 @@ class GRPOScriptArguments(ScriptArguments):
         metadata={"help": "Minimum number of pixels for the image"},
     )
     pg_name: Optional[str] = field(
-        #可选 grpo gpg
+        #可选 grpo gpg pinsker
         default="grpo",
-        metadata={"help": "Only train the specified part of the model (grpo, gpg)"},
+        metadata={"help": "Only train the specified part of the model (grpo, gpg, pinsker)"},
     )
     adjust_gd: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to adjust the gradient of the model"},
     )
+
+    min_inverse_alpha: Optional[float] = field(
+        default=0.4,
+        metadata={"help": "Minimum inverse alpha for the model"},
+    )
+
 
 import numpy as np
 
@@ -147,7 +153,7 @@ def accuracy_reward(completions, solution, **kwargs):
         if os.getenv("DEBUG_MODE") == "true":
             log_path = os.getenv("LOG_PATH")
             # local_rank = int(os.getenv("LOCAL_RANK", 0))
-            with open(log_path, "a") as f:
+            with open(log_path, "a", encoding="utf8") as f:
                 f.write(f"------------- {current_time} Accuracy reward: {reward} -------------\n")
                 f.write(f"Content: {content}\n")
                 f.write(f"Solution: {sol}\n")
@@ -176,12 +182,13 @@ SYSTEM_PROMPT = (
 
 def main(script_args, training_args, model_args):
     training_args.pg_name = script_args.pg_name
-    assert training_args.pg_name in ["grpo", "gpg"], f"pg_name {training_args.pg_name} is not supported"
+    assert training_args.pg_name in ["grpo", "gpg", "pinsker"], f"pg_name {training_args.pg_name} is not supported"
     training_args.adjust_gd = script_args.adjust_gd
+    training_args.min_inverse_alpha = script_args.min_inverse_alpha
     # Get reward functions
     reward_funcs = [reward_funcs_registry[func] for func in script_args.reward_funcs]
 
-    dataset = Dataset.from_json("lisa_evaluation/lisa_train_sft.json")
+    dataset = Dataset.from_json("/mnt/workspace/huanghailang/pro/mllm_o1/Visual-RFT/lisa_evaluation/lisa_train_sft.json")
 
     # Format into conversation
     def make_conversation(example):

@@ -1,6 +1,12 @@
 timestamp=$1
 echo "timestamp: ${timestamp}"
 pg_name="gpg"
+adjust_gd="true"
+min_inverse_alpha="0.4"
+
+# Wandb
+export WANDB_PROJECT="VisualThinker-R1-Zero"
+
 DATA_PATH=SAT
 CKPT_PATH=Qwen2-VL-2B
 
@@ -16,6 +22,8 @@ accelerate launch --config_file=src/open-r1-multimodal/configs/zero2.yaml \
     --num_machines ${WORLD_SIZE} --machine_rank ${RANK} --num_processes ${GPUS} \
     src/open-r1-multimodal/src/open_r1/grpo.py \
     --pg_name ${pg_name} \
+    --adjust_gd ${adjust_gd} \
+    --min_inverse_alpha ${min_inverse_alpha} \
     --output_dir ${SAVE_PATH} \
     --model_name_or_path ${CKPT_PATH} \
     --dataset_name ${DATA_PATH} \
@@ -32,5 +40,5 @@ accelerate launch --config_file=src/open-r1-multimodal/configs/zero2.yaml \
     --run_name ${RUN_NAME} \
     --save_steps 100 \
     --save_only_model true \
-    --report_to tensorboard \
+    --report_to wandb \
     2>&1 | tee -a "./${SAVE_PATH}/training_log.log"
